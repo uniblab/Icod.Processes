@@ -1,0 +1,21 @@
+name: pr-build-and-test
+
+on:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - run: dotnet clean Icod.Processes.sln -c Staging
+      - run: dotnet restore Icod.Processes.sln
+      - run: dotnet build Icod.Processes.sln -c Staging --no-restore
+      - run: dotnet test Icod.Processes.sln -c Staging --no-build --logger trx
