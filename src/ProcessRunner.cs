@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using Icod.Timing;
 
 /// <summary>
-/// Provides the compatibility facade for shared child-process execution.
+/// Provides a convenience facade for shared child-process execution.
 /// </summary>
 public static class ProcessRunner {
 	/// <summary>Runs a child process asynchronously through the system executor.</summary>

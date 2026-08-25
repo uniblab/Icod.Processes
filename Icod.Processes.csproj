@@ -60,6 +60,7 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<Deterministic>true</Deterministic>
 		<PackageTags>process;process-management;subprocess;child-process;process-execution;signals;posix-signals;priority;nice;process-group;session;pid;pid-reuse;timeout;cancellation;cross-platform;dotnet;csharp;async;process-control</PackageTags>
+		<PackageProjectUrl>https://github.com/uniblab/Icod.Processes</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/uniblab/Icod.Processes</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageIcon>icon.png</PackageIcon>

@@ -67,6 +67,55 @@ Console.WriteLine( result.StandardOutput );
 
 A larger runnable example is available under `samples/Icod.Processes.Sample`.
 
+## Platform capabilities
+
+`Icod.Processes` exposes neutral contracts, but not every operating system has
+the same native process-control facilities. Providers report unsupported
+operations explicitly rather than fabricating Unix semantics.
+
+| Capability | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| Child execution, streams, environment, and working directory | Yes | Yes | Yes |
+| Process identity, PID-reuse observation, liveness, and waiting | Yes | Yes | Yes |
+| New process group at child launch | Yes | Yes | Yes |
+| Custom native `argv[0]` | Unsupported | Yes | Yes |
+| Process-group target control | Unsupported | Yes | Yes |
+| Signal delivery | Termination substitution | Native | Native |
+| Signal disposition observation | Unsupported | Yes | Unsupported |
+| Blocked-signal observation | Unsupported | Yes | Unsupported |
+| Queued signal values | Unsupported | Yes | Unsupported |
+| Priority operations | Priority-class approximation | Native nice values | Native nice values |
+
+Applications should inspect provider capabilities and operation results where a
+feature can vary by host.
+
+## Migrating from Icod.CommandFramework.Processes
+
+Code that currently consumes the process layer from `Icod.CommandFramework`
+can migrate without taking a dependency on ProcPs or CoreUtils.
+
+Replace the package dependency with:
+
+```xml
+<PackageReference Include="Icod.Processes" Version="1.0.0" />
+```
+
+and replace:
+
+```csharp
+using Icod.CommandFramework.Processes;
+```
+
+with:
+
+```csharp
+using Icod.Processes;
+```
+
+The standalone package owns the neutral process execution and control contracts.
+ProcPs-specific enumeration, `/proc` parsing, metrics, matching, personalities,
+and presentation remain outside this library.
+
 ## Design boundary
 
 `Icod.Processes` owns general process execution and control mechanisms. It does

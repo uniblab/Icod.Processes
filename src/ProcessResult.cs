@@ -62,7 +62,7 @@ public sealed class ProcessResult {
 		standardError
 	);
 
-	/// <summary>Initializes a compatibility process result.</summary>
+	/// <summary>Initializes a process result from the legacy exit-code shape.</summary>
 	internal ProcessResult(
 		int? exitCode,
 		bool wasCanceled,

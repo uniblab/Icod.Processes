@@ -1,5 +1,6 @@
 namespace Icod.Processes.ProcessTestHost;
 
+using System.Runtime.InteropServices;
 using System.Text;
 
 /// <summary>
@@ -95,6 +96,20 @@ public static class Program {
 				);
 				return 0;
 
+			case "process-group-file":
+				if ( OperatingSystem.IsWindows() || 2 > args.Length ) {
+					return 3;
+				}
+				await File.WriteAllTextAsync(
+					args[ 1 ],
+					string.Concat(
+						Environment.ProcessId,
+						":",
+						GetProcessGroupId()
+					)
+				).ConfigureAwait( false );
+				return 0;
+
 			case "sleep":
 				await Task.Delay(
 					1 < args.Length
@@ -111,4 +126,10 @@ public static class Program {
 				return 2;
 		}
 	}
+
+	[DllImport(
+		"libc",
+		EntryPoint = "getpgrp"
+	)]
+	private static extern int GetProcessGroupId();
 }

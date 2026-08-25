@@ -124,6 +124,112 @@ public sealed class ProcessRunnerTests {
 		Assert.Equal( 127, result.Termination.ToPortableExitCode() );
 	}
 
+	/// <summary>Verifies that the POSIX native launcher accepts an explicit argument zero.</summary>
+	[Fact]
+	public async Task PosixNativeLaunchAcceptsCustomArgumentZero() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var options = CreateNativeHostOptions(
+			"exit",
+			"0"
+		);
+		options.ArgumentZero = "icod-processes-test-host";
+
+		var result = await ProcessRunner.RunAsync(
+			options
+		);
+
+		Assert.True( result.Started );
+		Assert.Equal( 0, result.ExitCode );
+	}
+
+	/// <summary>Verifies that POSIX process-group creation makes the child its group leader.</summary>
+	[Fact]
+	public async Task PosixNativeLaunchCreatesProcessGroup() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var observationPath = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(),
+			$"icod-processes-pgid-{Guid.NewGuid():N}"
+		);
+		try {
+			var options = CreateNativeHostOptions(
+				"process-group-file",
+				observationPath
+			);
+			options.CreateProcessGroup = true;
+
+			var result = await ProcessRunner.RunAsync(
+				options
+			);
+
+			Assert.True( result.Started );
+			Assert.Equal( 0, result.ExitCode );
+			Assert.NotNull( result.Identity );
+
+			var observation = await File.ReadAllTextAsync(
+				observationPath
+			);
+			var fields = observation.Split(
+				':'
+			);
+			Assert.Equal( 2, fields.Length );
+			Assert.True(
+				int.TryParse(
+					fields[ 0 ],
+					out var childProcessId
+				)
+			);
+			Assert.True(
+				int.TryParse(
+					fields[ 1 ],
+					out var childProcessGroupId
+				)
+			);
+			Assert.Equal( result.Identity.ProcessId, childProcessId );
+			Assert.Equal( childProcessId, childProcessGroupId );
+		} finally {
+			if ( File.Exists( observationPath ) ) {
+				File.Delete(
+					observationPath
+				);
+			}
+		}
+	}
+
+	/// <summary>Verifies that native POSIX launch rejects managed output capture predictably.</summary>
+	[Fact]
+	public async Task PosixNativeLaunchRejectsCapturedOutput() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var options = CreateNativeHostOptions(
+			"exit",
+			"0"
+		);
+		options.CreateProcessGroup = true;
+		options.CaptureStandardOutput = true;
+
+		var result = await ProcessRunner.RunAsync(
+			options
+		);
+
+		Assert.False( result.Started );
+		Assert.Equal(
+			ProcessTerminationKind.LaunchFailed,
+			result.Termination.Kind
+		);
+		Assert.Equal(
+			ProcessLaunchFailureKind.SetupFailed,
+			result.Termination.LaunchFailureKind
+		);
+	}
+
 	/// <summary>Verifies monotonic timeout classification and child cleanup.</summary>
 	[Fact]
 	public async Task TimesOutAndTerminatesChild() {
@@ -198,6 +304,34 @@ public sealed class ProcessRunnerTests {
 		options.Arguments.Add(
 			host
 		);
+		foreach ( var argument in arguments ) {
+			options.Arguments.Add(
+				argument
+			);
+		}
+		return options;
+	}
+
+	private static ProcessRunOptions CreateNativeHostOptions(
+		params string[] arguments
+	) {
+		var managedHost = GetProcessTestHostPath();
+		var hostDirectory = System.IO.Path.GetDirectoryName(
+			managedHost
+		) ?? throw new InvalidOperationException( "Unable to locate the process test host directory." );
+		var host = System.IO.Path.Combine(
+			hostDirectory,
+			"Icod.Processes.ProcessTestHost"
+		);
+		Assert.True(
+			File.Exists( host ),
+			$"Native process test host was not built at '{host}'."
+		);
+		var options = new ProcessRunOptions(
+			host
+		) {
+			ReturnLaunchFailureResult = true
+		};
 		foreach ( var argument in arguments ) {
 			options.Arguments.Add(
 				argument
