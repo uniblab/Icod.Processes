@@ -191,6 +191,49 @@ internal static class ProcessNative {
 	/// <summary>Gets the POSIX spawn flag that assigns the child process group.</summary>
 	internal const short PosixSpawnSetProcessGroup = 0x0002;
 
+	/// <summary>Initializes one opaque POSIX spawn file-actions object.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "posix_spawn_file_actions_init",
+		SetLastError = false
+	)]
+	internal static extern int PosixSpawnFileActionsInit(
+		IntPtr fileActions
+	);
+
+	/// <summary>Destroys one initialized POSIX spawn file-actions object.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "posix_spawn_file_actions_destroy",
+		SetLastError = false
+	)]
+	internal static extern int PosixSpawnFileActionsDestroy(
+		IntPtr fileActions
+	);
+
+	/// <summary>Adds one ordered <c>dup2</c> operation to POSIX spawn file actions.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "posix_spawn_file_actions_adddup2",
+		SetLastError = false
+	)]
+	internal static extern int PosixSpawnFileActionsAddDup2(
+		IntPtr fileActions,
+		int sourceDescriptor,
+		int destinationDescriptor
+	);
+
+	/// <summary>Adds one ordered descriptor close to POSIX spawn file actions.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "posix_spawn_file_actions_addclose",
+		SetLastError = false
+	)]
+	internal static extern int PosixSpawnFileActionsAddClose(
+		IntPtr fileActions,
+		int descriptor
+	);
+
 	/// <summary>Initializes one opaque POSIX spawn-attribute object.</summary>
 	[DllImport(
 		"libc",

@@ -14,7 +14,8 @@ The source layer includes:
 - process, process-group, session, and priority-selector target models;
 - arbitrary-process liveness and wait operations;
 - portable signal parsing, observation, and delivery;
-- POSIX launch-time signal policy and process-group creation; and
+- POSIX launch-time signal policy and process-group creation;
+- ordered child-only POSIX file-descriptor duplication at spawn time; and
 - POSIX nice values with controlled Windows priority-class substitutions.
 
 ProcPs-specific process enumeration, `/proc` reporting fields, selection grammar,

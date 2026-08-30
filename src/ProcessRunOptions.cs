@@ -164,6 +164,17 @@ public sealed class ProcessRunOptions {
 	}
 
 	/// <summary>
+	/// Gets ordered POSIX child file-descriptor duplications applied atomically at spawn time.
+	/// </summary>
+	/// <remarks>
+	/// Adding an item selects the native POSIX launcher. This capability is unsupported on Windows
+	/// and cannot be combined with managed standard-stream redirection or output capture.
+	/// </remarks>
+	public IList<PosixFileDescriptorDuplication> PosixFileDescriptorDuplications {
+		get;
+	} = new List<PosixFileDescriptorDuplication>();
+
+	/// <summary>
 	/// Gets or sets whether a POSIX child inherits standard input as a write-only null
 	/// device so reads fail rather than return end-of-file.
 	/// </summary>
