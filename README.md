@@ -25,12 +25,118 @@ originally incubated under `Icod.CommandFramework.Processes`.
 - Linux signal disposition and blocked-mask observations;
 - POSIX queued signal delivery for individual processes;
 - POSIX nice-value operations and Windows priority-class substitutions;
-- POSIX launch-time signal disposition/mask policy; and
-- atomic POSIX child process-group creation when the native launch path is used.
+- POSIX launch-time signal disposition/mask policy;
+- atomic POSIX child process-group creation when the native launch path is used;
+- ordered native POSIX file-descriptor duplication and closure at child launch;
+  and
+- opt-in POSIX current-process replacement with reversible descriptor actions
+  and `execvp`-compatible executable-text fallback.
+
+## Release highlights
+
+### 1.2.0 — POSIX current-process replacement
+
+Version 1.2.0 adds an opt-in process-image replacement path for Unix-like hosts.
+Set `ProcessRunOptions.ReplaceCurrentProcess` to request native `execve` behavior
+instead of creating and supervising a child process.
+
+On successful replacement, `RunAsync` does not return: the calling process is
+replaced by the requested executable and keeps its process identity. This is
+important for Unix-style wrapper commands where PID, job-control, signal, and
+standard-descriptor semantics belong directly to the target program rather than
+to a long-lived managed parent.
+
+The replacement path supports:
+
+- exact argument vectors and an explicit native `argv[0]`;
+- exact environment snapshots and executable lookup;
+- an optional working directory;
+- launch-time POSIX signal disposition and mask policy;
+- unreadable standard input for commands such as `nohup`;
+- ordered `PosixFileDescriptorDuplications` immediately before `execve`;
+- restoration of descriptor and launch state when replacement fails; and
+- the traditional `execvp` behavior of retrying executable text through
+  `/bin/sh` when the initial exec fails with `ENOEXEC`.
+
+For example, an exec-style wrapper can request replacement without changing the
+public process-execution abstraction:
+
+```csharp
+using Icod.Processes;
+
+var options = new ProcessRunOptions( "program" ) {
+	ArgumentZero = "program",
+	Environment = ProcessEnvironment.CreateInheritedBuilder().Build(),
+	ReplaceCurrentProcess = true,
+	ResolveExecutable = true,
+	ReturnLaunchFailureResult = true
+};
+options.Arguments.Add( "argument" );
+
+ProcessResult result = await ProcessRunner.RunAsync( options );
+// Reached only if replacement did not succeed.
+```
+
+Current-process replacement is a POSIX capability and is unsupported on
+Windows. It cannot be combined with managed standard-stream redirection or
+capture, creation of a new child process group, a managed execution timeout, or
+a `ProcessStarted` callback. Callers that require those supervisory features
+should continue to use normal child-process execution.
+
+This capability is intended for wrapper implementations such as `env`, `nice`,
+`nohup`, and `stdbuf`, where successful Unix execution traditionally replaces
+the wrapper process rather than leaving a supervisor behind.
+
+### 1.1.0 — Native POSIX file-descriptor actions
+
+Version 1.1.0 added ordered native POSIX file-descriptor duplication to
+`ProcessRunOptions`. `PosixFileDescriptorDuplication` describes a `dup2`-style
+source-to-destination mapping and can optionally close the source descriptor
+after the duplication.
+
+Actions execute in list order. This permits later actions to refer to descriptor
+state established by earlier actions. For example, a wrapper can redirect
+standard output to an already-open file descriptor and then make standard error
+refer to that same open-file description:
+
+```csharp
+using Icod.Processes;
+
+var options = new ProcessRunOptions( "program" ) {
+	ResolveExecutable = true,
+	ReturnLaunchFailureResult = true
+};
+
+options.PosixFileDescriptorDuplications.Add(
+	new PosixFileDescriptorDuplication(
+		outputFileDescriptor,
+		1,
+		closeSource: true
+	)
+);
+options.PosixFileDescriptorDuplications.Add(
+	new PosixFileDescriptorDuplication(
+		1,
+		2
+	)
+);
+
+ProcessResult result = await ProcessRunner.RunAsync( options );
+```
+
+Unlike managed stream forwarding, these actions modify the child's native file
+descriptors at launch. The child therefore observes the actual descriptor type,
+seekability, open-file-description identity, and inheritance semantics rather
+than a parent-managed pipe. This is particularly important for Unix wrappers
+such as `nohup` and for programs that inspect their own standard descriptors.
+
+Native descriptor actions are supported on Linux and macOS and are unsupported
+on Windows. They cannot be combined with managed standard-stream redirection or
+output capture.
 
 ## Requirements
 
-The current `1.1.0` release targets .NET 10.0. The implementation uses process
+The current `1.2.0` release targets .NET 10.0. The implementation uses process
 launch capabilities provided by the .NET 10 runtime and intentionally does not
 add compatibility shims for older target frameworks.
 
@@ -39,13 +145,13 @@ The only runtime package dependency is `Icod.Timing` 1.0.0.
 ## Installation
 
 ```text
-Install-Package Icod.Processes -Version 1.1.0
+Install-Package Icod.Processes -Version 1.2.0
 ```
 
 or:
 
 ```text
-dotnet add package Icod.Processes --version 1.1.0
+dotnet add package Icod.Processes --version 1.2.0
 ```
 
 ## Example
@@ -80,6 +186,7 @@ operations explicitly rather than fabricating Unix semantics.
 | New process group at child launch | Yes | Yes | Yes |
 | Custom native `argv[0]` | Unsupported | Yes | Yes |
 | Native child file-descriptor duplication | Unsupported | Yes | Yes |
+| Current-process replacement (`execve` with descriptor actions and shell fallback) | Unsupported | Yes | Yes |
 | Process-group target control | Unsupported | Yes | Yes |
 | Signal delivery | Termination substitution | Native | Native |
 | Signal disposition observation | Unsupported | Yes | Unsupported |
@@ -98,7 +205,7 @@ can migrate without taking a dependency on ProcPs or CoreUtils.
 Replace the package dependency with:
 
 ```xml
-<PackageReference Include="Icod.Processes" Version="1.1.0" />
+<PackageReference Include="Icod.Processes" Version="1.2.0" />
 ```
 
 and replace:

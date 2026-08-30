@@ -171,6 +171,15 @@ public sealed class SystemProcessExecutor : IProcessExecutor {
 			}
 			executable = located.Value!;
 		}
+		if ( options.ReplaceCurrentProcess ) {
+			return this.RunWithPosixExec(
+				options,
+				executable,
+				environment,
+				startedTimestamp,
+				cancellationToken
+			);
+		}
 		if ( null != options.ArgumentZero
 			|| 0 < options.PosixFileDescriptorDuplications.Count
 			|| ( options.CreateProcessGroup && !OperatingSystem.IsWindows() )
@@ -438,6 +447,165 @@ public sealed class SystemProcessExecutor : IProcessExecutor {
 		}
 	}
 
+	private ProcessResult RunWithPosixExec(
+		ProcessRunOptions options,
+		string executable,
+		ProcessEnvironment environment,
+		long startedTimestamp,
+		CancellationToken cancellationToken
+	) {
+		if ( OperatingSystem.IsWindows() ) {
+			return this.HandlePosixExecSetupFailure(
+				options,
+				startedTimestamp,
+				"Current-process replacement is unavailable on Windows."
+			);
+		}
+		if ( null != options.StandardInput
+			|| null != options.StandardOutput
+			|| null != options.StandardError
+			|| options.CaptureStandardOutput
+			|| options.CaptureStandardError
+		) {
+			return this.HandlePosixExecSetupFailure(
+				options,
+				startedTimestamp,
+				"Current-process replacement requires inherited standard streams."
+			);
+		}
+		if ( options.CreateProcessGroup ) {
+			return this.HandlePosixExecSetupFailure(
+				options,
+				startedTimestamp,
+				"Current-process replacement cannot create a child process group."
+			);
+		}
+		if ( null != options.Timeout ) {
+			return this.HandlePosixExecSetupFailure(
+				options,
+				startedTimestamp,
+				"Current-process replacement cannot be supervised by a managed timeout."
+			);
+		}
+		if ( null != options.ProcessStarted ) {
+			return this.HandlePosixExecSetupFailure(
+				options,
+				startedTimestamp,
+				"Current-process replacement does not create a child identity callback."
+			);
+		}
+		if ( cancellationToken.IsCancellationRequested ) {
+			return new ProcessResult(
+				false,
+				null,
+				ProcessTermination.Canceled(),
+				this._clock.GetElapsedTime(
+					startedTimestamp,
+					this._clock.GetTimestamp()
+				),
+				null,
+				null
+			);
+		}
+
+		int execError;
+		try {
+			using var path = new Utf8NativeString( executable );
+			var argumentValues = new List<string>( options.Arguments.Count + 1 ) {
+				options.ArgumentZero ?? executable
+			};
+			argumentValues.AddRange( options.Arguments );
+			using var arguments = new Utf8NativeStringVector( argumentValues );
+			using var environmentVector = new Utf8NativeStringVector(
+				environment.Variables.Select(
+					static pair => string.Concat( pair.Key, "=", pair.Value )
+				)
+			);
+			lock ( PosixSpawnWorkingDirectorySync ) {
+				var previousDirectory = Environment.CurrentDirectory;
+				try {
+					if ( null != options.WorkingDirectory ) {
+						Directory.SetCurrentDirectory( options.WorkingDirectory );
+					}
+					using var signalScope = PosixProcessLaunchScope.Enter(
+						options.SignalPolicy
+					);
+					using var descriptorScope = PosixFileDescriptorMutationScope.Enter(
+						options.PosixFileDescriptorDuplications,
+						options.UseUnreadableStandardInput
+					);
+					_ = ProcessNative.ExecVe(
+						path.Pointer,
+						arguments.Pointer,
+						environmentVector.Pointer
+					);
+					execError = Marshal.GetLastPInvokeError();
+					if ( ProcessNative.ExecFormatError == execError ) {
+						const string shell = "/bin/sh";
+						using var shellPath = new Utf8NativeString( shell );
+						var shellArgumentValues = new List<string>( options.Arguments.Count + 2 ) {
+							shell,
+							executable
+						};
+						shellArgumentValues.AddRange( options.Arguments );
+						using var shellArguments = new Utf8NativeStringVector(
+							shellArgumentValues
+						);
+						_ = ProcessNative.ExecVe(
+							shellPath.Pointer,
+							shellArguments.Pointer,
+							environmentVector.Pointer
+						);
+						execError = Marshal.GetLastPInvokeError();
+					}
+				} finally {
+					if ( !string.Equals(
+						Environment.CurrentDirectory,
+						previousDirectory,
+						StringComparison.Ordinal
+					) ) {
+						Directory.SetCurrentDirectory( previousDirectory );
+					}
+				}
+			}
+		} catch ( Exception exception ) when (
+			exception is ArgumentException
+			or DirectoryNotFoundException
+			or IOException
+			or InvalidOperationException
+			or PlatformNotSupportedException
+			or UnauthorizedAccessException
+		) {
+			return this.HandlePosixExecSetupFailure(
+				options,
+				startedTimestamp,
+				exception.Message
+			);
+		}
+
+		var failureKind = ProcessNative.NoSuchFile == execError
+			? ProcessLaunchFailureKind.NotFound
+			: ProcessLaunchFailureKind.CannotInvoke
+		;
+		var message = $"Unable to replace the current process with '{executable}' (errno {execError}).";
+		if ( !options.ReturnLaunchFailureResult ) {
+			if ( ProcessLaunchFailureKind.NotFound == failureKind ) {
+				throw new FileNotFoundException(
+					message,
+					executable
+				);
+			}
+			throw new InvalidOperationException(
+				message
+			);
+		}
+		return this.CreateLaunchFailure(
+			startedTimestamp,
+			message,
+			failureKind
+		);
+	}
+
 	private async Task<ProcessResult> RunWithPosixSpawnAsync(
 		ProcessRunOptions options,
 		string executable,
@@ -618,6 +786,21 @@ public sealed class SystemProcessExecutor : IProcessExecutor {
 			}
 			await this._clock.DelayAsync( PosixWaitPollInterval ).ConfigureAwait( false );
 		}
+	}
+
+	private ProcessResult HandlePosixExecSetupFailure(
+		ProcessRunOptions options,
+		long startedTimestamp,
+		string message
+	) {
+		if ( !options.ReturnLaunchFailureResult ) {
+			throw new PlatformNotSupportedException( message );
+		}
+		return this.CreateLaunchFailure(
+			startedTimestamp,
+			message,
+			ProcessLaunchFailureKind.SetupFailed
+		);
 	}
 
 	private ProcessResult HandlePosixSpawnSetupFailure(

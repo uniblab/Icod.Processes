@@ -1,7 +1,9 @@
 namespace Icod.Processes.ProcessTestHost;
 
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
+using Icod.Processes;
 
 /// <summary>
 /// Provides deterministic child-process behaviors used by Icod.Processes.Tests.
@@ -96,6 +98,18 @@ public static class Program {
 				);
 				return 0;
 
+			case "pid-file":
+				if ( 2 > args.Length ) {
+					return 3;
+				}
+				await File.WriteAllTextAsync(
+					args[ 1 ],
+					Environment.ProcessId.ToString(
+						CultureInfo.InvariantCulture
+					)
+				).ConfigureAwait( false );
+				return 0;
+
 			case "process-group-file":
 				if ( OperatingSystem.IsWindows() || 2 > args.Length ) {
 					return 3;
@@ -109,6 +123,64 @@ public static class Program {
 					)
 				).ConfigureAwait( false );
 				return 0;
+
+			case "replace": {
+					if ( OperatingSystem.IsWindows() || 2 > args.Length ) {
+						return 3;
+					}
+					var options = new ProcessRunOptions(
+						args[ 1 ]
+					) {
+						ReplaceCurrentProcess = true,
+						ResolveExecutable = true,
+						ReturnLaunchFailureResult = true
+					};
+					for ( var index = 2; index < args.Length; index++ ) {
+						options.Arguments.Add(
+							args[ index ]
+						);
+					}
+					var result = await ProcessRunner.RunAsync(
+						options
+					).ConfigureAwait( false );
+					return result.Termination.ToPortableExitCode();
+				}
+
+			case "replace-output": {
+					if ( OperatingSystem.IsWindows() || 4 > args.Length ) {
+						return 3;
+					}
+					await using var output = new FileStream(
+						args[ 2 ],
+						FileMode.CreateNew,
+						FileAccess.Write,
+						FileShare.Read | FileShare.Write | FileShare.Delete
+					);
+					var descriptor = output.SafeFileHandle.DangerousGetHandle().ToInt32();
+					var options = new ProcessRunOptions(
+						args[ 1 ]
+					) {
+						ReplaceCurrentProcess = true,
+						ResolveExecutable = true,
+						ReturnLaunchFailureResult = true
+					};
+					options.PosixFileDescriptorDuplications.Add(
+						new PosixFileDescriptorDuplication(
+							descriptor,
+							1,
+							closeSource: true
+						)
+					);
+					for ( var index = 3; index < args.Length; index++ ) {
+						options.Arguments.Add(
+							args[ index ]
+						);
+					}
+					var result = await ProcessRunner.RunAsync(
+						options
+					).ConfigureAwait( false );
+					return result.Termination.ToPortableExitCode();
+				}
 
 			case "sleep":
 				await Task.Delay(

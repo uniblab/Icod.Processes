@@ -139,6 +139,23 @@ public sealed class ProcessRunOptions {
 		set;
 	}
 
+	/// <summary>
+	/// Gets or sets whether POSIX execution replaces the current process image instead of creating a child.
+	/// </summary>
+	/// <remarks>
+	/// On successful replacement, <see cref="IProcessExecutor.RunAsync(ProcessRunOptions, CancellationToken)"/>
+	/// does not return. This capability is unavailable on Windows and cannot be combined with managed
+	/// standard-stream redirection or capture, a new process group, an execution timeout, or a
+	/// <see cref="ProcessStarted"/> callback. Ordered <see cref="PosixFileDescriptorDuplications"/> are
+	/// applied to the current process immediately before replacement and restored if exec fails.
+	/// Executable text that returns <c>ENOEXEC</c> is retried through <c>/bin/sh</c>, matching the
+	/// traditional <c>execvp</c> contract.
+	/// </remarks>
+	public bool ReplaceCurrentProcess {
+		get;
+		set;
+	}
+
 	/// <summary>Gets or sets whether launch failures are returned instead of thrown.</summary>
 	public bool ReturnLaunchFailureResult {
 		get;
@@ -164,11 +181,13 @@ public sealed class ProcessRunOptions {
 	}
 
 	/// <summary>
-	/// Gets ordered POSIX child file-descriptor duplications applied atomically at spawn time.
+	/// Gets ordered POSIX file-descriptor duplications applied at native launch or current-process replacement.
 	/// </summary>
 	/// <remarks>
-	/// Adding an item selects the native POSIX launcher. This capability is unsupported on Windows
-	/// and cannot be combined with managed standard-stream redirection or output capture.
+	/// Adding an item selects the native POSIX launcher. With <see cref="ReplaceCurrentProcess"/>, actions
+	/// are applied in order to the current process immediately before exec and restored if exec fails.
+	/// This capability is unsupported on Windows and cannot be combined with managed standard-stream
+	/// redirection or output capture.
 	/// </remarks>
 	public IList<PosixFileDescriptorDuplication> PosixFileDescriptorDuplications {
 		get;

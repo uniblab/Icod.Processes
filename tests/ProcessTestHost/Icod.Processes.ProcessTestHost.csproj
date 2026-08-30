@@ -34,4 +34,7 @@
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
 	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\..\Icod.Processes.csproj" />
+	</ItemGroup>
 </Project>

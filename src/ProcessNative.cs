@@ -14,6 +14,10 @@ internal static class ProcessNative {
 	internal const int NoSuchProcess = 3;
 	/// <summary>Gets the POSIX no-such-file error number.</summary>
 	internal const int NoSuchFile = 2;
+	/// <summary>Gets the POSIX executable-format error number.</summary>
+	internal const int ExecFormatError = 8;
+	/// <summary>Gets the POSIX bad-file-descriptor error number.</summary>
+	internal const int BadFileDescriptor = 9;
 	/// <summary>Gets the POSIX access-denied error number.</summary>
 	internal const int AccessDenied = 13;
 	/// <summary>Gets the POSIX invalid-argument error number.</summary>
@@ -25,6 +29,14 @@ internal static class ProcessNative {
 
 	/// <summary>Gets the POSIX write-only open flag.</summary>
 	internal const int OpenWriteOnly = 1;
+	/// <summary>Gets the POSIX fcntl command that duplicates a descriptor at or above a minimum value.</summary>
+	internal const int DuplicateFileDescriptor = 0;
+	/// <summary>Gets the POSIX fcntl command that sets descriptor flags.</summary>
+	internal const int SetFileDescriptorFlags = 2;
+	/// <summary>Gets the POSIX close-on-exec descriptor flag.</summary>
+	internal const int CloseOnExec = 1;
+	/// <summary>Gets Darwin's no-argument <c>FIOCLEX</c> request for marking a descriptor close-on-exec.</summary>
+	internal static nuint DarwinFileIoCloseOnExec => 0x20006601u;
 
 	/// <summary>Represents the POSIX <c>union sigval</c> used by <c>sigqueue(3)</c>.</summary>
 	[StructLayout( LayoutKind.Explicit )]
@@ -85,6 +97,29 @@ internal static class ProcessNative {
 	)]
 	internal static extern int Close(
 		int descriptor
+	);
+
+	/// <summary>Reads or changes one POSIX file descriptor through <c>fcntl(2)</c>.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "fcntl",
+		SetLastError = true
+	)]
+	internal static extern int Fcntl(
+		int descriptor,
+		int command,
+		int argument
+	);
+
+	/// <summary>Invokes a no-argument POSIX file-descriptor ioctl request.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "ioctl",
+		SetLastError = true
+	)]
+	internal static extern int Ioctl(
+		int descriptor,
+		nuint request
 	);
 
 	/// <summary>Invokes POSIX kill.</summary>
@@ -287,6 +322,18 @@ internal static class ProcessNative {
 		IntPtr path,
 		IntPtr fileActions,
 		IntPtr attributes,
+		IntPtr arguments,
+		IntPtr environment
+	);
+
+	/// <summary>Replaces the current POSIX process image using exact argument and environment vectors.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "execve",
+		SetLastError = true
+	)]
+	internal static extern int ExecVe(
+		IntPtr path,
 		IntPtr arguments,
 		IntPtr environment
 	);
