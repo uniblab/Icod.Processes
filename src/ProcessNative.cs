@@ -35,6 +35,8 @@ internal static class ProcessNative {
 	internal const int SetFileDescriptorFlags = 2;
 	/// <summary>Gets the POSIX close-on-exec descriptor flag.</summary>
 	internal const int CloseOnExec = 1;
+	/// <summary>Gets Darwin's no-argument <c>FIOCLEX</c> request for marking a descriptor close-on-exec.</summary>
+	internal static nuint DarwinFileIoCloseOnExec => 0x20006601u;
 
 	/// <summary>Represents the POSIX <c>union sigval</c> used by <c>sigqueue(3)</c>.</summary>
 	[StructLayout( LayoutKind.Explicit )]
@@ -107,6 +109,17 @@ internal static class ProcessNative {
 		int descriptor,
 		int command,
 		int argument
+	);
+
+	/// <summary>Invokes a no-argument POSIX file-descriptor ioctl request.</summary>
+	[DllImport(
+		"libc",
+		EntryPoint = "ioctl",
+		SetLastError = true
+	)]
+	internal static extern int Ioctl(
+		int descriptor,
+		nuint request
 	);
 
 	/// <summary>Invokes POSIX kill.</summary>

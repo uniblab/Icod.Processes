@@ -99,14 +99,27 @@ internal sealed class PosixFileDescriptorMutationScope : IDisposable {
 		}
 		var minimumBackupDescriptor = descriptors[ ^1 ] + 1;
 		foreach ( var descriptor in descriptors ) {
-			var backup = ProcessNative.Fcntl(
-				descriptor,
-				ProcessNative.DuplicateFileDescriptor,
-				minimumBackupDescriptor
-			);
+			int backup;
+			int duplicateError;
+			if ( OperatingSystem.IsMacOS() ) {
+				backup = DuplicateDescriptorOutsideSet(
+					descriptor,
+					descriptorSet,
+					out duplicateError
+				);
+			} else {
+				backup = ProcessNative.Fcntl(
+					descriptor,
+					ProcessNative.DuplicateFileDescriptor,
+					minimumBackupDescriptor
+				);
+				duplicateError = 0 > backup
+					? Marshal.GetLastPInvokeError()
+					: 0
+				;
+			}
 			if ( 0 > backup ) {
-				var error = Marshal.GetLastPInvokeError();
-				if ( ProcessNative.BadFileDescriptor == error ) {
+				if ( ProcessNative.BadFileDescriptor == duplicateError ) {
 					this._preserved.Add(
 						new PreservedDescriptor(
 							descriptor,
@@ -117,14 +130,21 @@ internal sealed class PosixFileDescriptorMutationScope : IDisposable {
 					continue;
 				}
 				throw new InvalidOperationException(
-					$"Unable to preserve file descriptor {descriptor} (errno {error})."
+					$"Unable to preserve file descriptor {descriptor} (errno {duplicateError})."
 				);
 			}
-			if ( 0 > ProcessNative.Fcntl(
-				backup,
-				ProcessNative.SetFileDescriptorFlags,
-				ProcessNative.CloseOnExec
-			) ) {
+			var closeOnExecResult = OperatingSystem.IsMacOS()
+				? ProcessNative.Ioctl(
+					backup,
+					ProcessNative.DarwinFileIoCloseOnExec
+				)
+				: ProcessNative.Fcntl(
+					backup,
+					ProcessNative.SetFileDescriptorFlags,
+					ProcessNative.CloseOnExec
+				)
+			;
+			if ( 0 > closeOnExecResult ) {
 				var error = Marshal.GetLastPInvokeError();
 				_ = ProcessNative.Close(
 					backup
@@ -145,7 +165,42 @@ internal sealed class PosixFileDescriptorMutationScope : IDisposable {
 					"No descriptor number remains for launch-state preservation."
 				);
 			}
-			minimumBackupDescriptor = backup + 1;
+			minimumBackupDescriptor = Math.Max(
+				minimumBackupDescriptor,
+				backup + 1
+			);
+		}
+	}
+
+	private static int DuplicateDescriptorOutsideSet(
+		int descriptor,
+		HashSet<int> descriptorSet,
+		out int error
+	) {
+		var reservations = new List<int>();
+		try {
+			while ( true ) {
+				var duplicate = ProcessNative.Dup(
+					descriptor
+				);
+				if ( 0 > duplicate ) {
+					error = Marshal.GetLastPInvokeError();
+					return duplicate;
+				}
+				if ( !descriptorSet.Contains( duplicate ) ) {
+					error = 0;
+					return duplicate;
+				}
+				reservations.Add(
+					duplicate
+				);
+			}
+		} finally {
+			foreach ( var reservation in reservations ) {
+				_ = ProcessNative.Close(
+					reservation
+				);
+			}
 		}
 	}
 
