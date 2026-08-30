@@ -145,6 +145,169 @@ public sealed class ProcessRunnerTests {
 		Assert.Equal( 0, result.ExitCode );
 	}
 
+	/// <summary>Verifies POSIX current-process replacement preserves the process identity.</summary>
+	[Fact]
+	public async Task PosixExecReplacementPreservesProcessIdentity() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var observationPath = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(),
+			$"icod-processes-exec-{Guid.NewGuid():N}"
+		);
+		try {
+			var host = GetNativeProcessTestHostPath();
+			var options = CreateNativeHostOptions(
+				"replace",
+				host,
+				"pid-file",
+				observationPath
+			);
+			ProcessIdentity? startedIdentity = null;
+			options.ProcessStarted = identity => startedIdentity = identity;
+
+			var result = await ProcessRunner.RunAsync(
+				options
+			);
+
+			Assert.True( result.Started );
+			Assert.Equal( 0, result.ExitCode );
+			Assert.NotNull( startedIdentity );
+			var replacementProcessId = int.Parse(
+				await File.ReadAllTextAsync(
+					observationPath
+				),
+				System.Globalization.CultureInfo.InvariantCulture
+			);
+			Assert.Equal(
+				startedIdentity.ProcessId,
+				replacementProcessId
+			);
+		} finally {
+			if ( File.Exists( observationPath ) ) {
+				File.Delete(
+					observationPath
+				);
+			}
+		}
+	}
+
+	/// <summary>Verifies POSIX replacement preserves execvp-style shell fallback for executable text.</summary>
+	[Fact]
+	public async Task PosixExecReplacementFallsBackToShellForExecutableText() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var directory = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(),
+			$"icod-processes-exec-shell-{Guid.NewGuid():N}"
+		);
+		Directory.CreateDirectory(
+			directory
+		);
+		var scriptPath = System.IO.Path.Combine(
+			directory,
+			"command"
+		);
+		var observationPath = System.IO.Path.Combine(
+			directory,
+			"pid"
+		);
+		try {
+			await File.WriteAllTextAsync(
+				scriptPath,
+				"printf '%s' \"$$\" > \"$1\""
+			);
+			File.SetUnixFileMode(
+				scriptPath,
+				UnixFileMode.UserRead
+					| UnixFileMode.UserWrite
+					| UnixFileMode.UserExecute
+			);
+
+			var options = CreateNativeHostOptions(
+				"replace",
+				scriptPath,
+				observationPath
+			);
+			ProcessIdentity? startedIdentity = null;
+			options.ProcessStarted = identity => startedIdentity = identity;
+
+			var result = await ProcessRunner.RunAsync(
+				options
+			);
+
+			Assert.True( result.Started );
+			Assert.Equal( 0, result.ExitCode );
+			Assert.NotNull( startedIdentity );
+			var replacementProcessId = int.Parse(
+				await File.ReadAllTextAsync(
+					observationPath
+				),
+				System.Globalization.CultureInfo.InvariantCulture
+			);
+			Assert.Equal(
+				startedIdentity.ProcessId,
+				replacementProcessId
+			);
+		} finally {
+			Directory.Delete(
+				directory,
+				true
+			);
+		}
+	}
+
+	/// <summary>Verifies POSIX replacement applies ordered descriptor actions without changing process identity.</summary>
+	[Fact]
+	public async Task PosixExecReplacementAppliesFileDescriptorDuplications() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var outputPath = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(),
+			$"icod-processes-exec-fd-{Guid.NewGuid():N}"
+		);
+		try {
+			var host = GetNativeProcessTestHostPath();
+			var options = CreateNativeHostOptions(
+				"replace-output",
+				host,
+				outputPath,
+				"pid"
+			);
+			ProcessIdentity? startedIdentity = null;
+			options.ProcessStarted = identity => startedIdentity = identity;
+
+			var result = await ProcessRunner.RunAsync(
+				options
+			);
+
+			Assert.True( result.Started );
+			Assert.Equal( 0, result.ExitCode );
+			Assert.NotNull( startedIdentity );
+			var replacementProcessId = int.Parse(
+				await File.ReadAllTextAsync(
+					outputPath
+				),
+				System.Globalization.CultureInfo.InvariantCulture
+			);
+			Assert.Equal(
+				startedIdentity.ProcessId,
+				replacementProcessId
+			);
+		} finally {
+			if ( File.Exists( outputPath ) ) {
+				File.Delete(
+					outputPath
+				);
+			}
+		}
+	}
+
 	/// <summary>Verifies that POSIX process-group creation makes the child its group leader.</summary>
 	[Fact]
 	public async Task PosixNativeLaunchCreatesProcessGroup() {
@@ -374,14 +537,7 @@ public sealed class ProcessRunnerTests {
 	private static ProcessRunOptions CreateNativeHostOptions(
 		params string[] arguments
 	) {
-		var managedHost = GetProcessTestHostPath();
-		var hostDirectory = System.IO.Path.GetDirectoryName(
-			managedHost
-		) ?? throw new InvalidOperationException( "Unable to locate the process test host directory." );
-		var host = System.IO.Path.Combine(
-			hostDirectory,
-			"Icod.Processes.ProcessTestHost"
-		);
+		var host = GetNativeProcessTestHostPath();
 		Assert.True(
 			File.Exists( host ),
 			$"Native process test host was not built at '{host}'."
@@ -397,6 +553,17 @@ public sealed class ProcessRunnerTests {
 			);
 		}
 		return options;
+	}
+
+	private static string GetNativeProcessTestHostPath() {
+		var managedHost = GetProcessTestHostPath();
+		var hostDirectory = System.IO.Path.GetDirectoryName(
+			managedHost
+		) ?? throw new InvalidOperationException( "Unable to locate the process test host directory." );
+		return System.IO.Path.Combine(
+			hostDirectory,
+			"Icod.Processes.ProcessTestHost"
+		);
 	}
 
 	private static string GetProcessTestHostPath() {
