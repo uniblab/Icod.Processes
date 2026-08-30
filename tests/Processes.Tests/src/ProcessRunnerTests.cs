@@ -201,6 +201,65 @@ public sealed class ProcessRunnerTests {
 		}
 	}
 
+	/// <summary>Verifies native POSIX launch applies ordered child-only descriptor duplications.</summary>
+	[Fact]
+	public async Task PosixNativeLaunchAppliesFileDescriptorDuplications() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var outputPath = System.IO.Path.Combine(
+			System.IO.Path.GetTempPath(),
+			$"icod-processes-fd-{Guid.NewGuid():N}"
+		);
+		ProcessResult result;
+		try {
+			await using ( var output = new FileStream(
+				outputPath,
+				FileMode.CreateNew,
+				FileAccess.Write,
+				FileShare.Read | FileShare.Write | FileShare.Delete
+			) ) {
+				var descriptor = output.SafeFileHandle.DangerousGetHandle().ToInt32();
+				var options = CreateNativeHostOptions(
+					"dual",
+					"1"
+				);
+				options.PosixFileDescriptorDuplications.Add(
+					new PosixFileDescriptorDuplication(
+						descriptor,
+						1,
+						closeSource: true
+					)
+				);
+				options.PosixFileDescriptorDuplications.Add(
+					new PosixFileDescriptorDuplication(
+						1,
+						2
+					)
+				);
+
+				result = await ProcessRunner.RunAsync(
+					options
+				);
+			}
+
+			var outputText = await File.ReadAllTextAsync(
+				outputPath
+			);
+			Assert.True( result.Started );
+			Assert.Equal( 0, result.ExitCode );
+			Assert.Contains( "out-0", outputText, StringComparison.Ordinal );
+			Assert.Contains( "err-0", outputText, StringComparison.Ordinal );
+		} finally {
+			if ( File.Exists( outputPath ) ) {
+				File.Delete(
+					outputPath
+				);
+			}
+		}
+	}
+
 	/// <summary>Verifies that native POSIX launch rejects managed output capture predictably.</summary>
 	[Fact]
 	public async Task PosixNativeLaunchRejectsCapturedOutput() {

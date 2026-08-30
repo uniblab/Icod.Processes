@@ -171,7 +171,10 @@ public sealed class SystemProcessExecutor : IProcessExecutor {
 			}
 			executable = located.Value!;
 		}
-		if ( null != options.ArgumentZero || ( options.CreateProcessGroup && !OperatingSystem.IsWindows() ) ) {
+		if ( null != options.ArgumentZero
+			|| 0 < options.PosixFileDescriptorDuplications.Count
+			|| ( options.CreateProcessGroup && !OperatingSystem.IsWindows() )
+		) {
 			return await this.RunWithPosixSpawnAsync(
 				options,
 				executable,
@@ -443,10 +446,14 @@ public sealed class SystemProcessExecutor : IProcessExecutor {
 		CancellationToken cancellationToken
 	) {
 		if ( OperatingSystem.IsWindows() ) {
+			var message = 0 < options.PosixFileDescriptorDuplications.Count
+				? "POSIX file-descriptor duplication is unavailable on Windows."
+				: "The managed Windows launcher cannot set an independent native argument zero safely."
+			;
 			return this.HandlePosixSpawnSetupFailure(
 				options,
 				startedTimestamp,
-				"The managed Windows launcher cannot set an independent native argument zero safely."
+				message
 			);
 		}
 		if ( null != options.StandardInput
@@ -486,11 +493,14 @@ public sealed class SystemProcessExecutor : IProcessExecutor {
 						options.SignalPolicy,
 						options.UseUnreadableStandardInput
 					);
+					using var spawnFileActions = new PosixSpawnFileActionsScope(
+						options.PosixFileDescriptorDuplications
+					);
 					using var spawnAttributes = new PosixSpawnAttributeScope( options.CreateProcessGroup );
 					spawnResult = ProcessNative.PosixSpawn(
 						out processId,
 						path.Pointer,
-						IntPtr.Zero,
+						spawnFileActions.Pointer,
 						spawnAttributes.Pointer,
 						arguments.Pointer,
 						environmentVector.Pointer

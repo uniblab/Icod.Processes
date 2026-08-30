@@ -30,7 +30,7 @@ originally incubated under `Icod.CommandFramework.Processes`.
 
 ## Requirements
 
-The initial `1.0.0` release targets .NET 10.0. The implementation uses process
+The current `1.1.0` release targets .NET 10.0. The implementation uses process
 launch capabilities provided by the .NET 10 runtime and intentionally does not
 add compatibility shims for older target frameworks.
 
@@ -39,13 +39,13 @@ The only runtime package dependency is `Icod.Timing` 1.0.0.
 ## Installation
 
 ```text
-Install-Package Icod.Processes -Version 1.0.0
+Install-Package Icod.Processes -Version 1.1.0
 ```
 
 or:
 
 ```text
-dotnet add package Icod.Processes --version 1.0.0
+dotnet add package Icod.Processes --version 1.1.0
 ```
 
 ## Example
@@ -79,6 +79,7 @@ operations explicitly rather than fabricating Unix semantics.
 | Process identity, PID-reuse observation, liveness, and waiting | Yes | Yes | Yes |
 | New process group at child launch | Yes | Yes | Yes |
 | Custom native `argv[0]` | Unsupported | Yes | Yes |
+| Native child file-descriptor duplication | Unsupported | Yes | Yes |
 | Process-group target control | Unsupported | Yes | Yes |
 | Signal delivery | Termination substitution | Native | Native |
 | Signal disposition observation | Unsupported | Yes | Unsupported |
@@ -97,7 +98,7 @@ can migrate without taking a dependency on ProcPs or CoreUtils.
 Replace the package dependency with:
 
 ```xml
-<PackageReference Include="Icod.Processes" Version="1.0.0" />
+<PackageReference Include="Icod.Processes" Version="1.1.0" />
 ```
 
 and replace:
