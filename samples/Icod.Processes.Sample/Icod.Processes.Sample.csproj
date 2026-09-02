@@ -9,6 +9,9 @@
 		<AssemblyName>Icod.Processes.Sample</AssemblyName>
 		<RootNamespace>Icod.Processes.Sample</RootNamespace>
 		<Configurations>Debug;Release;Staging</Configurations>
+		<DebugType>portable</DebugType>
+		<DebugSymbols>true</DebugSymbols>
+		<SignAssembly>false</SignAssembly>
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\..\Icod.Processes.csproj" />
