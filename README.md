@@ -1,5 +1,8 @@
 # Icod.Processes
 
+[![PR Staging build](https://github.com/uniblab/Icod.Processes/actions/workflows/pull-request.yaml/badge.svg)](https://github.com/uniblab/Icod.Processes/actions/workflows/pull-request.yaml)
+[![Main Release validation](https://github.com/uniblab/Icod.Processes/actions/workflows/main.yaml/badge.svg?branch=main)](https://github.com/uniblab/Icod.Processes/actions/workflows/main.yaml)
+
 `Icod.Processes` is a cross-platform .NET library for safe child-process
 execution and neutral process-control primitives. It provides reusable process
 mechanisms without tying callers to a command suite such as CoreUtils or
@@ -234,25 +237,44 @@ grammar, metrics, personalities, or command presentation. Those remain in
 Likewise, command-line parsing, diagnostics, and other command-hosting concerns
 remain outside this package.
 
-## Building
+## Build and CI/CD lifecycle
 
-On Windows:
+Local development uses `Debug`:
 
 ```text
 build.cmd
 ```
 
-On Unix-like hosts:
+or, on Unix-like hosts:
 
 ```text
 ./build.sh
 ```
 
-Both scripts support `clean`, `restore`, `build`, `test`, and `pack`. With no
-argument they run the complete sequence.
+Both scripts delegate to `packaging/Invoke-Build.ps1`. With no argument they run:
 
-CI builds and tests on Windows, Ubuntu, and macOS. Publishing from `main` packs
-and publishes the NuGet package after all three platform jobs succeed.
+```text
+clean -> restore -> build -> test -> pack -> validate
+```
+
+The repository lifecycle is:
+
+```text
+local development -> Debug
+pull request       -> Staging on Windows/Linux/macOS
+main               -> validation-only Release on six OS/architecture runners
+v<semver> tag      -> Release publication, when the tagged commit is contained in main
+```
+
+`main` never publishes. Tagged releases verify the exact `Icod.Processes`
+`.nupkg` and `.snupkg`, including the `Icod.Timing` 1.0.0 dependency and portable
+PDB payload, before NuGet.org and GitHub Packages publish the same package in
+parallel. The final GitHub Release contains the package, symbols, and a SHA-256
+manifest.
+
+`Debug`, `Staging`, and `Release` all use portable debug information. Common
+configuration properties are declared once in each project instead of being
+repeated across configuration-specific property groups.
 
 ## Author
 

@@ -1,0 +1,71 @@
+name: main
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CONFIGURATION: Release
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows x64
+            package: false
+          - os: windows-11-arm
+            name: Windows ARM64
+            package: false
+          - os: ubuntu-24.04
+            name: Linux x64
+            package: true
+          - os: ubuntu-24.04-arm
+            name: Linux ARM64
+            package: false
+          - os: macos-15-intel
+            name: macOS x64
+            package: false
+          - os: macos-15
+            name: macOS ARM64
+            package: false
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore Icod.Processes.sln
+      - name: Build
+        run: dotnet build Icod.Processes.sln -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Test
+        run: dotnet test Icod.Processes.sln -c ${{ env.CONFIGURATION }} --no-build --no-restore --logger trx
+      - name: Pack Release package
+        if: matrix.package
+        run: dotnet pack Icod.Processes.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -o artifacts -p:ContinuousIntegrationBuild=true
+      - name: Verify exact Release package artifacts
+        if: matrix.package
+        shell: pwsh
+        run: ./packaging/VerifyPackageArtifact.ps1 -ArtifactDirectory artifacts -Configuration '${{ env.CONFIGURATION }}'
+      - name: Upload validated Release package artifacts
+        if: matrix.package
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-processes-main-packages
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+          retention-days: 7

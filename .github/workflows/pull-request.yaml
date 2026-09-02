@@ -1,0 +1,60 @@
+name: pull-request
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CONFIGURATION: Staging
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            package: false
+          - os: ubuntu-latest
+            name: Linux
+            package: true
+          - os: macos-latest
+            name: macOS
+            package: false
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore Icod.Processes.sln
+      - name: Build
+        run: dotnet build Icod.Processes.sln -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Test
+        run: dotnet test Icod.Processes.sln -c ${{ env.CONFIGURATION }} --no-build --no-restore --logger trx
+      - name: Pack Staging package
+        if: matrix.package
+        run: dotnet pack Icod.Processes.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -o artifacts -p:ContinuousIntegrationBuild=true
+      - name: Verify exact Staging package artifacts
+        if: matrix.package
+        shell: pwsh
+        run: ./packaging/VerifyPackageArtifact.ps1 -ArtifactDirectory artifacts -Configuration '${{ env.CONFIGURATION }}'
+      - name: Upload validated Staging package artifacts
+        if: matrix.package
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-processes-pr-packages
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+          retention-days: 7

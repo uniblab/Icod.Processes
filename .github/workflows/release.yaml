@@ -1,0 +1,192 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CONFIGURATION: Release
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Require tagged commit in main
+        shell: pwsh
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if (0 -ne $LASTEXITCODE) {
+              throw "Release tag '$env:GITHUB_REF_NAME' does not point to a commit contained in main."
+          }
+      - id: version
+        name: Validate tag and package version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$') {
+              throw "Release tag '$tag' is not a supported v<semver> tag."
+          }
+          $version = $Matches.version
+          $projectVersion = (dotnet msbuild Icod.Processes.csproj -nologo -getProperty:PackageVersion).Trim()
+          if (0 -ne $LASTEXITCODE) {
+              throw "Unable to read Icod.Processes PackageVersion."
+          }
+          if ($projectVersion -ne $version) {
+              throw "Tag version '$version' does not match PackageVersion '$projectVersion'."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Restore
+        run: dotnet restore Icod.Processes.sln
+      - name: Build Release
+        run: dotnet build Icod.Processes.sln -c Release --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Test Release
+        run: dotnet test Icod.Processes.sln -c Release --no-build --no-restore --logger trx
+      - name: Pack Release package
+        run: dotnet pack Icod.Processes.csproj -c Release --no-build --no-restore -o artifacts/release -p:ContinuousIntegrationBuild=true
+      - name: Verify exact Release package
+        shell: pwsh
+        run: ./packaging/VerifyPackageArtifact.ps1 -ArtifactDirectory artifacts/release -Configuration Release -ExpectedVersion '${{ steps.version.outputs.version }}'
+      - name: Select release package and symbols
+        shell: pwsh
+        run: ./packaging/SelectReleasePackages.ps1 -SourceDirectory artifacts/release -DestinationDirectory artifacts/release-selected -ExpectedVersion '${{ steps.version.outputs.version }}'
+      - name: Upload release package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-processes-release-packages
+          path: |
+            artifacts/release-selected/*.nupkg
+            artifacts/release-selected/*.snupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-nuget:
+    needs: package
+    runs-on: ubuntu-latest
+    environment: Release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: icod-processes-release-packages
+          path: artifacts/package
+      - name: Exchange GitHub OIDC token for NuGet credential
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish to NuGet.org
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath artifacts/package -Filter '*.nupkg' -File | Sort-Object Name)
+          foreach ($package in $packages) {
+              dotnet nuget push $package.FullName --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
+              if (0 -ne $LASTEXITCODE) {
+                  throw "NuGet.org publication failed for '$($package.Name)'."
+              }
+          }
+
+  publish-github-packages:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: icod-processes-release-packages
+          path: artifacts/package
+      - name: Publish to GitHub Packages
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $source = 'https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json'
+          $packages = @(Get-ChildItem -LiteralPath artifacts/package -Filter '*.nupkg' -File | Sort-Object Name)
+          foreach ($package in $packages) {
+              dotnet nuget push $package.FullName --api-key $env:GITHUB_TOKEN --source $source --skip-duplicate
+              if (0 -ne $LASTEXITCODE) {
+                  throw "GitHub Packages publication failed for '$($package.Name)'."
+              }
+          }
+
+  github-release:
+    needs: [package, publish-nuget, publish-github-packages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: icod-processes-release-packages
+          path: artifacts/release-assets
+      - name: Create checksum manifest
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -LiteralPath artifacts/release-assets -File | Sort-Object Name)
+          if (2 -ne $files.Count) {
+              throw "Expected the .nupkg and .snupkg release assets; found $($files.Count)."
+          }
+          $lines = foreach ($file in $files) {
+              $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($file.Name)"
+          }
+          [System.IO.File]::WriteAllLines(
+              'artifacts/release-assets/SHA256SUMS.txt',
+              $lines,
+              [System.Text.UTF8Encoding]::new($false)
+          )
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $arguments = @(
+              'release', 'create', $env:GITHUB_REF_NAME,
+              '--verify-tag',
+              '--title', "Icod.Processes ${{ needs.package.outputs.version }}",
+              '--generate-notes'
+          )
+          if ('true' -eq '${{ needs.package.outputs.prerelease }}') {
+              $arguments += '--prerelease'
+              $arguments += '--latest=false'
+          }
+          $arguments += @(
+              Get-ChildItem -LiteralPath artifacts/release-assets -File |
+                  Sort-Object Name |
+                  ForEach-Object { $_.FullName }
+          )
+          & gh @arguments
+          if (0 -ne $LASTEXITCODE) {
+              throw "GitHub Release creation failed with status $LASTEXITCODE."
+          }

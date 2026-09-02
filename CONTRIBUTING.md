@@ -10,7 +10,10 @@ boundary between general process mechanisms and suite-specific policy.
 - Target framework: `net10.0`.
 - Language version: C# 13.
 - Nullable reference types and implicit global usings remain enabled.
-- Supported CI runners are `windows-latest`, `ubuntu-latest`, and `macos-latest`.
+- Pull-request CI runs on Windows, Ubuntu, and macOS.
+- Authoritative `main` Release validation runs on Windows/Linux/macOS x64 and
+  ARM64 runners.
+- Debug, Staging, and Release use portable debug information.
 - Repository text files use UTF-8 with LF line endings.
 - Public, protected, and internal types and members should have substantive XML
   documentation; use `<inheritdoc/>` where appropriate.
@@ -76,27 +79,31 @@ named and delete only resources owned by the test.
 
 ## Build and validation
 
-From the repository root:
+The standard local entry points are:
 
 ```text
-dotnet clean Icod.Processes.sln -c Debug
-dotnet restore Icod.Processes.sln
-dotnet build Icod.Processes.sln -c Debug --no-restore
-dotnet test Icod.Processes.sln -c Debug --no-build
+build.cmd
+./build.sh
 ```
 
-Before merge or release, also validate Release:
+With no section argument they run the complete Debug sequence:
 
 ```text
-dotnet clean Icod.Processes.sln -c Release
-dotnet restore Icod.Processes.sln
-dotnet build Icod.Processes.sln -c Release --no-restore
-dotnet test Icod.Processes.sln -c Release --no-build
+clean -> restore -> build -> test -> pack -> validate
 ```
 
-`build.cmd` and `build.sh` may be used for the standard local sequence. Pull
-requests run the Staging configuration across the three CI operating systems;
-pushes to `main` run Release and publish only after the Release matrix succeeds.
+Individual sections are `clean`, `restore`, `build`, `test`, `pack`, and
+`validate`.
+
+Pull requests run Staging on Windows, Linux, and macOS. A push to `main` runs the
+authoritative validation-only Release matrix on six OS/architecture runners.
+Ordinary pushes to `main` never publish packages.
+
+Publication is performed only by `.github/workflows/release.yaml` for an
+immutable `v<semver>` tag whose commit is contained in `main` and whose version
+matches `Icod.Processes.csproj:PackageVersion`. NuGet.org and GitHub Packages
+publish the same verified package in parallel; GitHub Release is the final
+rendezvous.
 
 ## Pull requests and commits
 
